@@ -400,7 +400,8 @@ Commands:
     ui                   面板地址
     status               内核状况
     log      [-f] [-n N] 查看日志
-    reload   [-f]        重载配置
+    reload               重载配置
+    restart              重启服务
     tun      [on|off]    Tun 模式
     mixin    [-e|-r]     Mixin 配置
     secret   [SECRET]    Web 密钥
