@@ -153,6 +153,131 @@ function clashtun() {
     esac
 }
 
+function clashlog() {
+    local lines=50
+    local follow=false
+
+    # 解析参数
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--follow)
+                follow=true
+                shift
+                ;;
+            -n|--lines)
+                if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
+                    lines="$2"
+                    shift 2
+                else
+                    _failcat "错误: -n/--lines 需要一个数字参数"
+                    return 1
+                fi
+                ;;
+            -h|--help)
+                cat <<EOF
+
+Usage: clash log [OPTIONS]
+
+查看 mihomo/clash 服务日志
+
+Options:
+    -f, --follow         实时跟踪日志输出
+    -n, --lines NUMBER   显示最后 N 行日志 (默认: 50)
+    -h, --help          显示此帮助信息
+
+Examples:
+    clash log                    # 显示最后50行日志
+    clash log -n 100            # 显示最后100行日志
+    clash log -f                # 实时跟踪日志
+    clash log -f -n 20          # 显示最后20行并实时跟踪
+
+EOF
+                return 0
+                ;;
+            *)
+                _failcat "未知参数: $1"
+                _failcat "使用 'clash log --help' 查看帮助"
+                return 1
+                ;;
+        esac
+    done
+
+    # 检查服务是否存在
+    if ! systemctl list-unit-files | grep -q "^${BIN_KERNEL_NAME}.service"; then
+        _failcat "错误: ${BIN_KERNEL_NAME} 服务不存在"
+        return 1
+    fi
+
+    # 构建 journalctl 命令
+    local cmd="sudo journalctl -u ${BIN_KERNEL_NAME}"
+
+    if [[ "$follow" == "true" ]]; then
+        cmd="$cmd -f"
+        _okcat "🔍" "实时跟踪 ${BIN_KERNEL_NAME} 日志 (按 Ctrl+C 退出)..."
+    else
+        _okcat "📋" "显示 ${BIN_KERNEL_NAME} 最后 ${lines} 行日志..."
+    fi
+
+    cmd="$cmd -n ${lines} --no-pager"
+
+    # 执行命令
+    eval "$cmd"
+}
+
+function clashreload() {
+    local config_file="${CLASH_CONFIG_RUNTIME}"
+
+    # 解析参数
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                cat <<EOF
+
+Usage: clash reload [OPTIONS]
+
+重新加载 mihomo/clash 配置文件
+
+Options:
+    -h, --help       显示此帮助信息
+
+说明:
+    重新加载 mihomo 配置文件，通过重启服务来应用新配置。
+    配置文件路径: ${config_file}
+
+Examples:
+    clash reload                 # 重载配置文件
+
+EOF
+                return 0
+                ;;
+            *)
+                _failcat "未知参数: $1"
+                _failcat "使用 'clash reload --help' 查看帮助"
+                return 1
+                ;;
+        esac
+    done
+
+    # 检查配置文件是否存在
+    if [[ ! -f "$config_file" ]]; then
+        _failcat "错误: 配置文件不存在: $config_file"
+        return 1
+    fi
+
+    # 验证配置文件
+    _okcat "🔍" "验证配置文件..."
+    if ! _valid_config "$config_file"; then
+        _failcat "❌" "配置文件验证失败，请检查配置文件语法"
+        return 1
+    fi
+
+    # 重启服务以应用新配置
+    _okcat "🔄" "重启服务以应用新配置..."
+    clashrestart
+    _okcat "✅" "配置重载完成"
+    return 0
+}
+
 function clashupdate() {
     local url=$(cat "$CLASH_CONFIG_URL")
     local is_auto
@@ -249,6 +374,17 @@ function clashctl() {
         shift
         clashupdate "$@"
         ;;
+    log)
+        shift
+        clashlog "$@"
+        ;;
+    reload)
+        shift
+        clashreload "$@"
+        ;;
+    restart)
+        clashrestart
+        ;;
     *)
         cat <<EOF
 
@@ -263,6 +399,8 @@ Commands:
     off                  关闭代理
     ui                   面板地址
     status               内核状况
+    log      [-f] [-n N] 查看日志
+    reload   [-f]        重载配置
     tun      [on|off]    Tun 模式
     mixin    [-e|-r]     Mixin 配置
     secret   [SECRET]    Web 密钥
