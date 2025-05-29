@@ -52,5 +52,15 @@ systemctl enable "$BIN_KERNEL_NAME" >&/dev/null || _failcat '💥' "设置自启
 
 clashui
 _okcat '🎉' 'enjoy 🎉'
+
+# 提示用户重新加载环境变量
+_okcat '📢' '安装完成！为确保 clash 命令在新终端中可用，请执行以下操作之一：'
+echo "   1. 重新打开终端窗口"
+echo "   2. 执行: source ~/.bashrc  (bash用户)"
+echo "   3. 执行: source ~/.zshrc   (zsh用户)"
+echo "   4. 执行: source /etc/profile.d/clash.sh"
+echo ""
+_okcat '✨' '或者直接在当前终端中使用 clash 命令：'
+
 clash
 _quit

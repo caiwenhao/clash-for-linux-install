@@ -7,9 +7,13 @@
 URL_GH_PROXY='https://gh-proxy.com/'
 URL_CLASH_UI="http://board.zash.run.place"
 
-SCRIPT_BASE_DIR='./script'
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLASH_INSTALL_DIR="$(dirname "$SCRIPT_DIR")"
 
-RESOURCES_BASE_DIR='./resources'
+SCRIPT_BASE_DIR="${CLASH_INSTALL_DIR}/script"
+
+RESOURCES_BASE_DIR="${CLASH_INSTALL_DIR}/resources"
 RESOURCES_BIN_DIR="${RESOURCES_BASE_DIR}/bin"
 RESOURCES_CONFIG="${RESOURCES_BASE_DIR}/config.yaml"
 RESOURCES_CONFIG_MIXIN="${RESOURCES_BASE_DIR}/mixin.yaml"
@@ -80,12 +84,115 @@ _set_bin
 _set_rc() {
     [ "$1" = "unset" ] && {
         sed -i "\|$CLASH_SCRIPT_DIR|d" "$SHELL_RC" 2>/dev/null
+        sed -i "\|$CLASH_BASE_DIR/bin|d" "$SHELL_RC" 2>/dev/null
+        # 清理系统级配置
+        [ -f "/etc/profile.d/clash.sh" ] && rm -f "/etc/profile.d/clash.sh"
+        # 清理全局命令
+        [ -f "/usr/local/bin/clash" ] && rm -f "/usr/local/bin/clash"
+        [ -f "/usr/local/bin/mihomo" ] && rm -f "/usr/local/bin/mihomo"
         return
     }
 
+    # 添加 clash 二进制文件目录到 PATH
+    local clash_bin_path="export PATH=\"$CLASH_BASE_DIR/bin:\$PATH\""
+
+    # 设置用户级配置
     [ -f "$SHELL_RC" ] && [ -n "$(tail -n 1 "$SHELL_RC")" ] && echo >>"$SHELL_RC"
+
+    # 检查是否已经添加了 PATH 配置，避免重复添加
+    if ! grep -q "$CLASH_BASE_DIR/bin" "$SHELL_RC" 2>/dev/null; then
+        echo "$clash_bin_path" >> "$SHELL_RC"
+    fi
+
+    # 添加 clash 函数加载
     echo "source $CLASH_SCRIPT_DIR/common.sh && source $CLASH_SCRIPT_DIR/clashctl.sh && watch_proxy" |
         tee -a "$SHELL_RC" >&/dev/null
+
+    # 创建系统级配置文件，确保所有用户都能使用
+    cat > "/etc/profile.d/clash.sh" << EOF
+#!/bin/bash
+# Clash for Linux - System-wide configuration
+export PATH="$CLASH_BASE_DIR/bin:\$PATH"
+
+# 加载 clash 函数（如果脚本存在）
+if [ -f "$CLASH_SCRIPT_DIR/common.sh" ] && [ -f "$CLASH_SCRIPT_DIR/clashctl.sh" ]; then
+    source "$CLASH_SCRIPT_DIR/common.sh" 2>/dev/null
+    source "$CLASH_SCRIPT_DIR/clashctl.sh" 2>/dev/null
+    # 自动检查代理状态
+    type watch_proxy >/dev/null 2>&1 && watch_proxy 2>/dev/null
+fi
+EOF
+    chmod +x "/etc/profile.d/clash.sh"
+
+    # 创建全局可访问的 clash 命令脚本
+    _create_global_commands
+}
+
+# 创建全局可访问的命令脚本
+_create_global_commands() {
+    # 创建 clash 命令脚本
+    cat > "/usr/local/bin/clash" << 'EOF'
+#!/bin/bash
+# Clash for Linux - Global Command Wrapper
+
+# 设置 clash 相关路径
+CLASH_BASE_DIR='/opt/clash'
+CLASH_SCRIPT_DIR="$CLASH_BASE_DIR/script"
+
+# 确保脚本存在
+if [ ! -f "$CLASH_SCRIPT_DIR/common.sh" ] || [ ! -f "$CLASH_SCRIPT_DIR/clashctl.sh" ]; then
+    echo "错误: Clash 脚本文件不存在，请检查安装是否完整" >&2
+    exit 1
+fi
+
+# 加载 clash 函数
+source "$CLASH_SCRIPT_DIR/common.sh" 2>/dev/null || {
+    echo "错误: 无法加载 common.sh" >&2
+    exit 1
+}
+source "$CLASH_SCRIPT_DIR/clashctl.sh" 2>/dev/null || {
+    echo "错误: 无法加载 clashctl.sh" >&2
+    exit 1
+}
+
+# 调用 clash 函数
+clash "$@"
+EOF
+
+    # 创建 mihomo 命令脚本
+    cat > "/usr/local/bin/mihomo" << 'EOF'
+#!/bin/bash
+# Mihomo for Linux - Global Command Wrapper
+
+# 设置 clash 相关路径
+CLASH_BASE_DIR='/opt/clash'
+CLASH_SCRIPT_DIR="$CLASH_BASE_DIR/script"
+
+# 确保脚本存在
+if [ ! -f "$CLASH_SCRIPT_DIR/common.sh" ] || [ ! -f "$CLASH_SCRIPT_DIR/clashctl.sh" ]; then
+    echo "错误: Clash 脚本文件不存在，请检查安装是否完整" >&2
+    exit 1
+fi
+
+# 加载 clash 函数
+source "$CLASH_SCRIPT_DIR/common.sh" 2>/dev/null || {
+    echo "错误: 无法加载 common.sh" >&2
+    exit 1
+}
+source "$CLASH_SCRIPT_DIR/clashctl.sh" 2>/dev/null || {
+    echo "错误: 无法加载 clashctl.sh" >&2
+    exit 1
+}
+
+# 调用 mihomo 函数
+mihomo "$@"
+EOF
+
+    # 设置执行权限
+    chmod +x "/usr/local/bin/clash"
+    chmod +x "/usr/local/bin/mihomo"
+
+    _okcat '🔗' '已创建全局命令链接: /usr/local/bin/clash, /usr/local/bin/mihomo'
 }
 
 # 默认集成、安装mihomo内核
